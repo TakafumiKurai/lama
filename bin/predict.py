@@ -15,8 +15,9 @@ __dir__ = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(__dir__)
 sys.path.append(os.path.abspath(os.path.join(__dir__, '../')))
 
-from saicinpainting.evaluation.utils import move_to_device
 from saicinpainting.evaluation.refinement import refine_predict
+from saicinpainting.evaluation.utils import move_to_device
+
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -30,11 +31,10 @@ import torch
 import tqdm
 import yaml
 from omegaconf import OmegaConf
-from torch.utils.data._utils.collate import default_collate
-
 from saicinpainting.training.data.datasets import make_default_val_dataset
 from saicinpainting.training.trainers import load_checkpoint
 from saicinpainting.utils import register_debug_signal_handlers
+from torch.utils.data._utils.collate import default_collate
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,32 +46,27 @@ def main(predict_config: OmegaConf):
 
         device = torch.device('cpu')
 
-        train_config_path = os.path.join(predict_config.model.path, 'config.yaml')
+        train_config_path = os.path.join('/var/task/lama/big-lama/', 'config.yaml')
         with open(train_config_path, 'r') as f:
             train_config = OmegaConf.create(yaml.safe_load(f))
-        
+
         train_config.training_model.predict_only = True
         train_config.visualizer.kind = 'noop'
 
         out_ext = predict_config.get('out_ext', '.png')
 
-        checkpoint_path = os.path.join(predict_config.model.path, 
-                                       'models', 
-                                       predict_config.model.checkpoint)
+        checkpoint_path = '/var/task/lama/big-lama/models/best.ckpt'
         model = load_checkpoint(train_config, checkpoint_path, strict=False, map_location='cpu')
         model.freeze()
         if not predict_config.get('refine', False):
             model.to(device)
 
-        if not predict_config.indir.endswith('/'):
-            predict_config.indir += '/'
-
-        dataset = make_default_val_dataset(predict_config.indir, **predict_config.dataset)
+        dataset = make_default_val_dataset('/var/task/lama/input/', **predict_config.dataset)
         for img_i in tqdm.trange(len(dataset)):
             mask_fname = dataset.mask_filenames[img_i]
             cur_out_fname = os.path.join(
-                predict_config.outdir, 
-                os.path.splitext(mask_fname[len(predict_config.indir):])[0] + out_ext
+                '/var/task/lama/output/',
+                os.path.splitext(mask_fname[len('/var/task/lama/input/'):])[0] + out_ext
             )
             os.makedirs(os.path.dirname(cur_out_fname), exist_ok=True)
             batch = default_collate([dataset[img_i]])
@@ -85,7 +80,7 @@ def main(predict_config: OmegaConf):
                 with torch.no_grad():
                     batch = move_to_device(batch, device)
                     batch['mask'] = (batch['mask'] > 0) * 1
-                    batch = model(batch)                    
+                    batch = model(batch)
                     cur_res = batch[predict_config.out_key][0].permute(1, 2, 0).detach().cpu().numpy()
                     unpad_to_size = batch.get('unpad_to_size', None)
                     if unpad_to_size is not None:
