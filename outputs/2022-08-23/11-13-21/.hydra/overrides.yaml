@@ -1,0 +1,3 @@
+- model.path=/var/task/lama/big-lama
+- indir=/var/task/lama/input
+- outdir=/var/task/lama/output
